@@ -41,6 +41,7 @@
 #include "definitions.h"                // SYS function prototypes
 
 /* RTC Time period match values for input clock of 1 KHz */
+#define DoublePressPeriod                       320
 #define PERIOD_500MS                            512
 #define PERIOD_1S                               1024
 #define PERIOD_2S                               2048
@@ -87,6 +88,9 @@ static void usartDmaChannelHandler(DMAC_TRANSFER_EVENT event, uintptr_t contextH
 #endif
 
 /* Self Defined */
+static volatile bool buttonPressed = false; // detects button presses
+void (*singlePressFuncPtr)();
+void (*doublePressFuncPtr)();
 
 void printString(char* string){
     snprintf((char*)uartTxBuffer, MAX_PRINT_LEN, string);
@@ -95,6 +99,33 @@ void printString(char* string){
                 (const void *)&(SERCOM5_REGS->USART_INT.SERCOM_DATA), \
                 strlen((const char*)uartTxBuffer));
 }
+
+/* modified from demo project on variable light flashing speeds */
+static void EIC_User_Handler(uintptr_t context)
+{
+    buttonPressed = true;
+}
+
+void startTimer(int timerDuration){
+    isRTCExpired = false;
+    RTC_Timer32Compare0Set(timerDuration);
+    RTC_Timer32CounterSet(0);
+    RTC_Timer32Start();   
+}
+
+void yieldTimer(int timerDuration){    
+    startTimer(timerDuration);
+    while(!isRTCExpired){}
+}
+
+/* Input Functions */
+void standardSinglePress(){
+    printString("Single Press \r\n");
+}
+void standardDoublePress(){
+    printString("Double Press \r\n");
+}
+
 
 /* ------- */
 
@@ -112,14 +143,48 @@ int main ( void )
     SYS_Initialize ( NULL );
     DMAC_ChannelCallbackRegister(DMAC_CHANNEL_0, usartDmaChannelHandler, 0);
     RTC_Timer32CallbackRegister(rtcEventHandler, 0);
-    RTC_Timer32Compare0Set(PERIOD_500MS);
+    RTC_Timer32Compare0Set(DoublePressPeriod);
     RTC_Timer32CounterSet(0);
     RTC_Timer32Start();
    
     /* c stuff goes here */
-    printString("Hello World, \r\n");
+    
+    /* Assigns a function to occur when the button ("mechanical switch") is pressed, 
+     It sets buttonPressed to true*/
+    EIC_CallbackRegister(EIC_PIN_15,EIC_User_Handler, 0);
+    
+    /* assigns input functions */
+    
+    singlePressFuncPtr = &standardSinglePress;
+    doublePressFuncPtr = &standardDoublePress;
+    
+    printString("Start \r\n");
+    
+    while(true){
+        /* Input detection */
+        if(buttonPressed == true){
+            /* Determine if single or double-tap. LED flashes to help indicate window to player*/
+            buttonPressed = false;
+            LED0_Toggle();
+            yieldTimer(DoublePressPeriod);
+            LED0_Toggle();
+            if(buttonPressed == true){
+                doublePressFuncPtr();
+                buttonPressed = false;
+            }
+            else{
+                singlePressFuncPtr();
+            }          
+        }
+        
+    }
+
     
 #endif
+    
+    
+    /* Execution should not come here during normal operation */
+    return ( EXIT_FAILURE );
 }
 /*******************************************************************************
  End of File

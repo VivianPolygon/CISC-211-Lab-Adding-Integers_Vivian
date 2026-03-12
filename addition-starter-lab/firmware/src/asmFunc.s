@@ -1,4 +1,4 @@
-/*** asmFunc.s   ***/
+/*** asmFunc.s   ***/ 
 
 /* Tell the assembler that what follows is in data memory    */
 .data
